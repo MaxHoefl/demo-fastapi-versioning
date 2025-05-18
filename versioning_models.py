@@ -80,8 +80,9 @@ class VersionRegistry:
     def register_endpoint(self, path: str, version: ApiVersion) -> None:
         """Register an endpoint with a supported version."""
         if path in self._endpoints:
-            self._endpoints[path].supported_versions.append(version)
-            self._endpoints[path].supported_versions.sort()  # Keep versions sorted
+            if version not in self._endpoints[path].supported_versions:
+                self._endpoints[path].supported_versions.append(version)
+                self._endpoints[path].supported_versions.sort()  # Keep versions sorted
         else:
             self._endpoints[path] = VersionedEndpoint(path, [version])
 

@@ -99,102 +99,6 @@ class VersionNegotiationMiddleware(BaseHTTPMiddleware):
         return '/'.join(normalized_segments)
 
 
-def versioned_api_route(api_version: str, *versions: str, **kwargs):
-    """
-    A decorator factory that produces a decorator for FastAPI route methods.
-    This registers the route with specific API versions and handles version negotiation.
-
-    Usage:
-    @router.get("/pets", dependencies=[Depends(db_dependency)])
-    @versioned_api_route("1.0", "2.0")
-    def get_pets():
-        ...
-    """
-
-    def decorator(endpoint_handler: Callable):
-        # Register this endpoint with the specified versions
-        path = kwargs.get('path', endpoint_handler.__name__)
-        for version in (api_version,) + versions:
-            version_obj = ApiVersion(version)
-            version_registry.register_endpoint(path, version_obj)
-
-        @functools.wraps(endpoint_handler)
-        async def wrapper(*args, **kwargs):
-            # Extract the request object
-            request = None
-            for arg in args:
-                if isinstance(arg, Request):
-                    request = arg
-                    break
-
-            if not request:
-                for value in kwargs.values():
-                    if isinstance(value, Request):
-                        request = value
-                        break
-
-            if not request:
-                # If can't find request object, just call the original handler
-                return await endpoint_handler(*args, **kwargs)
-
-            # Get the requested version from the request state or use latest
-            path = request.url.path
-            endpoint = version_registry.get_endpoint(path)
-
-            if not endpoint:
-                # This should not happen if routes are registered correctly
-                return await endpoint_handler(*args, **kwargs)
-
-            requested_version = getattr(request.state, 'api_version', None)
-            if requested_version is None:
-                # If no version specified, use the latest
-                requested_version = endpoint.get_latest_version()
-
-            latest_version = endpoint.get_latest_version()
-
-            # If using the latest version, no transformation needed
-            if requested_version == latest_version:
-                return await endpoint_handler(*args, **kwargs)
-
-            # Apply request transformation (shimming) if needed
-            transformed_args = list(args)
-            transformed_kwargs = dict(kwargs)
-
-            # Get the chain of versions to apply shims through
-            version_chain = endpoint.get_version_chain(requested_version)
-
-            # Apply request shims (forward direction)
-            for i in range(len(version_chain) - 1):
-                from_version = version_chain[i]
-                to_version = version_chain[i + 1]
-
-                request_shim = shim_registry.get_request_shim(path, from_version, to_version)
-                if request_shim:
-                    # Apply the request transformation
-                    # Note: For simplicity, we're assuming shims modify kwargs directly
-                    # You might want to enhance this to handle more complex transformations
-                    transformed_kwargs = request_shim(transformed_kwargs)
-
-            # Call the handler with transformed parameters
-            result = await endpoint_handler(*transformed_args, **transformed_kwargs)
-
-            # Apply response shims (backward direction)
-            for i in range(len(version_chain) - 1, 0, -1):
-                from_version = version_chain[i]
-                to_version = version_chain[i - 1]
-
-                response_shim = shim_registry.get_response_shim(path, from_version, to_version)
-                if response_shim:
-                    # Apply the response transformation
-                    result = response_shim(result)
-
-            return result
-
-        return wrapper
-
-    return decorator
-
-
 class VersionedAPIRouter(APIRouter):
     """
     A FastAPI router with built-in versioning support.
@@ -212,19 +116,88 @@ class VersionedAPIRouter(APIRouter):
             versions: The API versions this route supports.
             **kwargs: Additional arguments to pass to the route decorator.
         """
+        # Register the endpoint with all specified versions
+        print(f"Registering endpoint: {path} with versions: {versions}")
+        for version in versions:
+            version_obj = ApiVersion(version)
+            version_registry.register_endpoint(path, version_obj)
 
         def decorator(endpoint_handler: Callable):
-            # Register the endpoint with all specified versions
-            for version in versions:
-                version_obj = ApiVersion(version)
-                version_registry.register_endpoint(path, version_obj)
-
             # Use the versioned_api_route decorator
-            versioned_handler = versioned_api_route(*versions, path=path)(endpoint_handler)
+            # @functools.wraps(endpoint_handler)
+            async def wrapper(*args, **kwargs):
+                # Extract the request object
+                request = None
+                for arg in args:
+                    if isinstance(arg, Request):
+                        request = arg
+                        break
 
-            # Register the route with FastAPI
-            self.add_api_route(path, versioned_handler, **kwargs)
-            return versioned_handler
+                if not request:
+                    for value in kwargs.values():
+                        if isinstance(value, Request):
+                            request = value
+                            break
+
+                if not request:
+                    # If can't find request object, just call the original handler
+                    return await endpoint_handler(*args, **kwargs)
+
+                # Get the requested version from the request state or use latest
+                path = request.url.path
+                endpoint = version_registry.get_endpoint(path)
+
+                if not endpoint:
+                    # This should not happen if routes are registered correctly
+                    return await endpoint_handler(*args, **kwargs)
+
+                requested_version = getattr(request.state, 'api_version', None)
+                if requested_version is None:
+                    # If no version specified, use the latest
+                    requested_version = endpoint.get_latest_version()
+
+                latest_version = endpoint.get_latest_version()
+
+                # If using the latest version, no transformation needed
+                if requested_version == latest_version:
+                    return await endpoint_handler(*args, **kwargs)
+
+                # Apply request transformation (shimming) if needed
+                transformed_args = list(args)
+                transformed_kwargs = dict(kwargs)
+
+                # Get the chain of versions to apply shims through
+                version_chain = endpoint.get_version_chain(requested_version)
+
+                # Apply request shims (forward direction)
+                for i in range(len(version_chain) - 1):
+                    from_version = version_chain[i]
+                    to_version = version_chain[i + 1]
+
+                    request_shim = shim_registry.get_request_shim(path, from_version, to_version)
+                    if request_shim:
+                        # Apply the request transformation
+                        # Note: For simplicity, we're assuming shims modify kwargs directly
+                        # You might want to enhance this to handle more complex transformations
+                        transformed_kwargs = request_shim(transformed_kwargs)
+
+                # Call the handler with transformed parameters
+                result = await endpoint_handler(*transformed_args, **transformed_kwargs)
+
+                # Apply response shims (backward direction)
+                for i in range(len(version_chain) - 1, 0, -1):
+                    from_version = version_chain[i]
+                    to_version = version_chain[i - 1]
+
+                    response_shim = shim_registry.get_response_shim(path, from_version, to_version)
+                    if response_shim:
+                        # Apply the response transformation
+                        result = response_shim(result)
+
+                return result
+
+            self.add_api_route(path, endpoint_handler, **kwargs)
+            return wrapper
 
         return decorator
 

@@ -1,0 +1,4 @@
+### GET request to example server
+HEAD http://localhost:8000/pets
+
+###
