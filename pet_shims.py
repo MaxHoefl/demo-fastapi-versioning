@@ -38,46 +38,50 @@ def shim_pet_request_v1_to_v2(request_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def shim_pet_request_v2_to_v3(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """Transform a v2 pet request to v3 format."""
-    data = copy.deepcopy(request_data)
+    data = request_data
 
     # For POST/PUT requests with a body
-    if 'body' in data and isinstance(data['body'], dict):
+    if 'body' in data and isinstance(data['body'], PetCreateV2):
         # Convert age in years to age_months
-        if 'age' in data['body']:
-            data['body']['age_months'] = data['body']['age'] * 12
-            del data['body']['age']
+        body = data['body'].model_dump()
+        if 'age' in body:
+            body['age_months'] = body['age'] * 12
+            del body['age']
 
         # Add default values for new fields
-        if 'size' not in data['body']:
-            data['body']['size'] = PetSizeV3.MEDIUM.value
+        if 'size' not in body:
+            body['size'] = PetSizeV3.MEDIUM.value
 
-        if 'tags' not in data['body']:
-            data['body']['tags'] = []
+        if 'tags' not in body:
+            body['tags'] = []
 
         # Handle species mapping
-        if 'species' in data['body'] and data['body']['species'] not in [s.value for s in PetSpeciesV3]:
+        if 'species' in body and body['species'] not in [s.value for s in PetSpeciesV3]:
             # Map to closest match or default
-            data['body']['species'] = PetSpeciesV3.DOG.value
+            body['species'] = PetSpeciesV3.DOG.value
 
+        data['body'] = PetCreateV3(**body)
     return data
 
 
 def shim_pet_request_v3_to_v3_1(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """Transform a v3 pet request to v3.1 format."""
-    data = copy.deepcopy(request_data)
+    data = request_data
 
     # For POST/PUT requests with a body
-    if 'body' in data and isinstance(data['body'], dict):
+    if 'body' in data and isinstance(data['body'], PetCreateV3):
+        body = data['body'].model_dump()
         # Add default health status if not present
-        if 'health_status' not in data['body']:
-            data['body']['health_status'] = 'good'
+        if 'health_status' not in body:
+            body['health_status'] = 'good'
 
+        data['body'] = PetCreateV3_1(**body)
     return data
 
 
 # -------------- Response Shims (backward direction) --------------
 
-def shim_pet_response_v2_to_v1(response_data: Any) -> Any:
+def shim_pet_response_v2_to_v1(response_data: PetV2 | list[PetV2] | None) -> PetV1 | list[PetV1] | None:
     """Transform a v2 pet response to v1 format."""
     if not response_data:
         return response_data
@@ -86,24 +90,22 @@ def shim_pet_response_v2_to_v1(response_data: Any) -> Any:
     if isinstance(response_data, list):
         return [shim_pet_response_v2_to_v1(item) for item in response_data]
 
-    # Deep copy to avoid modifying the original
-    data = copy.deepcopy(response_data)
-
     # For response bodies
-    if isinstance(data, dict):
-        # Remove fields not in v1
-        if 'birth_date' in data:
-            del data['birth_date']
+    body = response_data.model_dump()
+    # Remove fields not in v1
+    if 'birth_date' in body:
+        del body['birth_date']
 
-        # Ensure species is compatible with v1
-        if 'species' in data and data['species'] not in [s.value for s in PetSpeciesV1]:
-            # Map to closest match in v1
-            data['species'] = PetSpeciesV1.DOG.value
+    # Ensure species is compatible with v1
+    if 'species' in body and body['species'] not in [s.value for s in PetSpeciesV1]:
+        # Map to closest match in v1
+        body['species'] = PetSpeciesV1.DOG.value
 
-    return data
+    response_data = PetV1(**body)
+    return response_data
 
 
-def shim_pet_response_v3_to_v2(response_data: Any) -> Any:
+def shim_pet_response_v3_to_v2(response_data: PetV3 | list[PetV3] | None) -> PetV2 | list[PetV2] | None:
     """Transform a v3 pet response to v2 format."""
     if not response_data:
         return response_data
@@ -112,32 +114,29 @@ def shim_pet_response_v3_to_v2(response_data: Any) -> Any:
     if isinstance(response_data, list):
         return [shim_pet_response_v3_to_v2(item) for item in response_data]
 
-    # Deep copy to avoid modifying the original
-    data = copy.deepcopy(response_data)
-
     # For response bodies
-    if isinstance(data, dict):
-        # Convert age_months back to age in years (rounded)
-        if 'age_months' in data:
-            data['age'] = data['age_months'] // 12
-            del data['age_months']
+    body = response_data.model_dump()
+    # Convert age_months back to age in years (rounded)
+    if 'age_months' in body:
+        body['age'] = body['age_months'] // 12
+        del body['age_months']
 
-        # Remove fields not in v2
-        if 'size' in data:
-            del data['size']
+    # Remove fields not in v2
+    if 'size' in body:
+        del body['size']
 
-        if 'tags' in data:
-            del data['tags']
+    if 'tags' in body:
+        del body['tags']
 
-        # Ensure species is compatible with v2
-        if 'species' in data and data['species'] not in [s.value for s in PetSpeciesV2]:
-            # Map to closest match in v2
-            data['species'] = PetSpeciesV2.DOG.value
+    # Ensure species is compatible with v2
+    if 'species' in body and body['species'] not in [s.value for s in PetSpeciesV2]:
+        # Map to closest match in v2
+        body['species'] = PetSpeciesV2.DOG.value
+    response_data = PetV2(**body)
+    return response_data
 
-    return data
 
-
-def shim_pet_response_v3_1_to_v3(response_data: Any) -> Any:
+def shim_pet_response_v3_1_to_v3(response_data: PetV3_1 | list[PetV3_1] | None) -> PetV3 | list[PetV3] | None:
     """Transform a v3.1 pet response to v3 format."""
     if not response_data:
         return response_data
@@ -146,16 +145,14 @@ def shim_pet_response_v3_1_to_v3(response_data: Any) -> Any:
     if isinstance(response_data, list):
         return [shim_pet_response_v3_1_to_v3(item) for item in response_data]
 
-    # Deep copy to avoid modifying the original
-    data = copy.deepcopy(response_data)
-
     # For response bodies
-    if isinstance(data, dict):
-        # Remove health_status field introduced in v3.1
-        if 'health_status' in data:
-            del data['health_status']
+    body = response_data.model_dump()
+    # Remove health_status field introduced in v3.1
+    if 'health_status' in body:
+        del body['health_status']
 
-    return data
+    response_data = PetV3(**body)
+    return response_data
 
 
 # -------------- Register Shims --------------

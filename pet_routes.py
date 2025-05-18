@@ -61,32 +61,17 @@ async def get_pet(
     status_code=status.HTTP_201_CREATED
 )
 async def create_pet(
+        body: PetCreateV1 | PetCreateV2 | PetCreateV3 | PetCreateV3_1,
         request: Request,
         pet_repository: PetRepository = Depends(acquire_pet_repository)
-) -> Any:
+) -> PetV1 | PetV2 | PetV3 | PetV3_1:
     """
     Create a new pet.
 
     The request body structure will be determined by the API version.
     """
-    # Extract the API version from the request
-    api_version = getattr(request.state, 'api_version', None)
-    if not api_version:
-        # Default to latest version
-        api_version = ApiVersion("3.1")
-
-    # Parse the request body according to the API version
-    if str(api_version) == "1.0":
-        pet_data = PetCreateV1.parse_obj(await request.json())
-    elif str(api_version) == "2.0":
-        pet_data = PetCreateV2.parse_obj(await request.json())
-    elif str(api_version) == "3.0":
-        pet_data = PetCreateV3.parse_obj(await request.json())
-    else:  # 3.1 or later
-        pet_data = PetCreateV3_1.parse_obj(await request.json())
-
     # The middleware and shims will handle conversion to latest version
-    created_pet = await pet_repository.create_pet(pet_data)
+    created_pet = await pet_repository.create_pet(body)
     return created_pet
 
 
@@ -114,13 +99,13 @@ async def update_pet(
 
     # Parse the request body according to the API version
     if str(api_version) == "1.0":
-        pet_data = PetCreateV1.parse_obj(await request.json())
+        pet_data = PetCreateV1.model_validate(await request.json())
     elif str(api_version) == "2.0":
-        pet_data = PetCreateV2.parse_obj(await request.json())
+        pet_data = PetCreateV2.model_validate(await request.json())
     elif str(api_version) == "3.0":
-        pet_data = PetCreateV3.parse_obj(await request.json())
+        pet_data = PetCreateV3.model_validate(await request.json())
     else:  # 3.1 or later
-        pet_data = PetCreateV3_1.parse_obj(await request.json())
+        pet_data = PetCreateV3_1.model_validate(await request.json())
 
     # The middleware and shims will handle conversion to latest version
     updated_pet = await pet_repository.update_pet(pet_id, pet_data)

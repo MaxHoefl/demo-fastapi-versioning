@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -30,13 +30,12 @@ app.add_middleware(VersionNegotiationMiddleware)
 app.include_router(pet_router, prefix="")
 
 
-# Global exception handler for version negotiation errors
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
     """Global exception handler."""
     return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": str(exc)},
+        status_code=exc.status_code,
+        content=exc.detail,
     )
 
 

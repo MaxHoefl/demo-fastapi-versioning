@@ -44,7 +44,11 @@ class VersionNegotiationMiddleware(BaseHTTPMiddleware):
         # If no version specified, process as normal
         # (will use the latest version in the route handler)
         if not version_header:
-            return await call_next(request)
+            return Response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=f"Missing required header: {API_VERSION_HEADER}"
+            )
+            # return await call_next(request)
 
         # Parse the requested version
         try:
@@ -99,6 +103,7 @@ class VersionNegotiationMiddleware(BaseHTTPMiddleware):
         return '/'.join(normalized_segments)
 
 
+
 class VersionedAPIRouter(APIRouter):
     """
     A FastAPI router with built-in versioning support.
@@ -107,24 +112,15 @@ class VersionedAPIRouter(APIRouter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def versioned_route(self, path: str, *versions: str, **kwargs):
+    @staticmethod
+    def equip_endpoint_with_shims():
         """
-        Create a versioned route for the given path.
-
-        Args:
-            path: The route path.
-            versions: The API versions this route supports.
-            **kwargs: Additional arguments to pass to the route decorator.
+        A decorator factory that produces a decorator for FastAPI route methods.
+        This registers the route with specific API versions and handles version negotiation.
         """
-        # Register the endpoint with all specified versions
-        print(f"Registering endpoint: {path} with versions: {versions}")
-        for version in versions:
-            version_obj = ApiVersion(version)
-            version_registry.register_endpoint(path, version_obj)
 
         def decorator(endpoint_handler: Callable):
-            # Use the versioned_api_route decorator
-            # @functools.wraps(endpoint_handler)
+            @functools.wraps(endpoint_handler)
             async def wrapper(*args, **kwargs):
                 # Extract the request object
                 request = None
@@ -163,6 +159,8 @@ class VersionedAPIRouter(APIRouter):
                     return await endpoint_handler(*args, **kwargs)
 
                 # Apply request transformation (shimming) if needed
+                if "body" not in kwargs:
+                    kwargs["body"] = await request.json()
                 transformed_args = list(args)
                 transformed_kwargs = dict(kwargs)
 
@@ -196,8 +194,31 @@ class VersionedAPIRouter(APIRouter):
 
                 return result
 
-            self.add_api_route(path, endpoint_handler, **kwargs)
             return wrapper
+
+        return decorator
+
+    def versioned_route(self, path: str, *versions: str, **kwargs):
+        """"
+        Create a versioned route for the given path.
+
+        Args:
+            path: The route path.
+            versions: The API versions this route supports.
+            **kwargs: Additional arguments to pass to the route decorator.
+        """
+
+        def decorator(endpoint_handler: Callable):
+            # Register the endpoint with all specified versions
+            for version in versions:
+                version_obj = ApiVersion(version)
+                version_registry.register_endpoint(path, version_obj)
+
+            versioned_handler = self.equip_endpoint_with_shims()(endpoint_handler)
+
+            # Register the route with FastAPI
+            self.add_api_route(path, versioned_handler, **kwargs)
+            return versioned_handler
 
         return decorator
 
