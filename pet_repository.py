@@ -1,4 +1,5 @@
 import uuid
+from functools import cache
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -14,7 +15,6 @@ class InMemoryPetRepository(PetRepository):
     An in-memory implementation of the PetRepository interface.
     Uses the latest model version (v3.1) internally.
     """
-
     def __init__(self):
         self._pets: Dict[uuid.UUID, Pet] = {}
 
@@ -63,21 +63,12 @@ class InMemoryPetRepository(PetRepository):
         return True
 
 
-# Factory function to create a repository instance
-async def acquire_pet_repository() -> PetRepository:
-    """
-    Factory function for dependency injection of PetRepository.
-    """
-    # In a real application, this might get a connection from a pool
-    # or set up a transaction
+@cache
+def acquire_pet_repository() -> PetRepository:
     return InMemoryPetRepository()
 
 
-# Pre-populate with some sample data
 async def populate_sample_data(repository: InMemoryPetRepository):
-    """Populate the repository with sample data."""
-
-    # Sample pets
     sample_pets = [
         {
             "name": "Buddy",

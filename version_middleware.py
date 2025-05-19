@@ -159,8 +159,6 @@ class VersionedAPIRouter(APIRouter):
                     return await endpoint_handler(*args, **kwargs)
 
                 # Apply request transformation (shimming) if needed
-                if "body" not in kwargs:
-                    kwargs["body"] = await request.json()
                 transformed_args = list(args)
                 transformed_kwargs = dict(kwargs)
 
